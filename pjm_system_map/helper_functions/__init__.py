@@ -6,4 +6,4 @@ Author: Huey Han <huilong.han@gmail.com>
 """
 
 
-from ._functions import *
+from .functions import *
