@@ -4,8 +4,7 @@ Helper functions
 Author: Huey Han <huilong.han@gmail.com>
 
 TODO:
-1) change to return dataframe rather than changing in place
-2) add sufficient comments
+1) add comments
 """
 
 import os
@@ -91,7 +90,7 @@ class PJMSystemMap:
                         tmp["geometry"]["type"] = "LineString"
                         tmp["geometry"]["coordinates"] = x["geometry"]["paths"][0]
                     else:
-                        raise("Unrecognized line geometry type. MultiLineString is detected but LineString is expected.")
+                        raise(ValueError("Unrecognized line geometry type. MultiLineString is detected but LineString is expected."))
 
                 # handle points
                 elif x["geometryType"] == "esriGeometryPoint":
@@ -109,7 +108,7 @@ class PJMSystemMap:
 
                 # else, unrecognizable geometry shape
                 else:
-                    raise("Unrecognized geometry type: {}".format(x["geometryType"]))
+                    raise(ValueError("Unrecognized geometry type: {}".format(x["geometryType"])))
 
                 # append tmp to geojson
                 geojson["features"].append(tmp)
@@ -144,9 +143,9 @@ class PJMSystemMap:
         lines.MILES = lines.MILES.astype(float)
         lines.VOLTAGE = lines.VOLTAGE.astype(float)
         # remove problematic substations that are not in line
-        self.geoCheckLineSubstations(lines)
+        lines = self.geoCheckLineSubstations(lines)
         # fill missing substations
-        self.fillMissingSubstations(lines)
+        lines = self.fillMissingSubstations(lines)
         # connect broken lines
         lines = self.connectBrokenLines(lines)
         # handle special cases
@@ -162,6 +161,8 @@ class PJMSystemMap:
         name = "pjm_zones"
         # make GeoJSON based on raw JSON export from PJM system map
         pjm_zones = self.makeGeoDataFrame(name, self.FILE_NAME[name])
+        # # TODO: using buffer will make AEP's geomety shape valid, but currently disabled
+        # pjm_zones.loc[18].geometry = pjm_zones.loc[18].geometry.buffer(0)
         return pjm_zones
 
 
@@ -182,7 +183,33 @@ class PJMSystemMap:
         # convert various columns to float
         substations.VOLTAGE = substations.VOLTAGE.astype(float)
         # get get match zone
-        self.geoMatchZones(substations)
+        substations = self.geoMatchZones(substations)
+        # change zone name
+        mapping = {
+            'Eastern Kentucky Power Cooperative': 'EKPC',
+            'Duke Energy Ohio Kentucky': 'DEOK',
+            'Commonwealth Edison Company': 'CE',
+            'American Electric Power Co., Inc.': 'AEP',
+            'American Transmission Systems, Inc.': 'ATSI',
+            'Allegheny Power': 'AP',
+            'Duquesne Light Company': 'DUQ',
+            'Public Service Electric and Gas Company': 'PS',
+            'Pennsylvania Electric Company': 'PN',
+            'PECO Energy Company': 'PE',
+            'Virginia Electric and Power Co.': 'DOM',
+            'PPL Electric Utilities Corporation': 'PL',
+            'Potomac Electric Power Company': 'PEP',
+            'The Dayton Power and Light Co.': 'DAY',
+            'Delmarva Power and Light Company': 'DPL',
+            'Jersey Central Power and Light Company': 'JC',
+            'Rockland Electric Company': 'RECO',
+            'Metropolitan Edison Company': 'ME',
+            'Baltimore Gas and Electric Company': 'BC',
+            'Atlantic City Electric Company': 'AE',
+            'Ohio Valley Electric Corporation': 'OVEC'
+        }
+        # replace commercial zones in substations
+        substations.COMMERCIAL_ZONE = substations.COMMERCIAL_ZONE.replace(mapping)
         return substations
 
 
@@ -196,7 +223,33 @@ class PJMSystemMap:
         # convert various columns to float
         substation_labels.VOLTAGE = substation_labels.VOLTAGE.astype(float)
         # get get match zone
-        self.geoMatchZones(substation_labels)
+        substation_labels = self.geoMatchZones(substation_labels)
+        # change zone name
+        mapping = {
+            'Eastern Kentucky Power Cooperative': 'EKPC',
+            'Duke Energy Ohio Kentucky': 'DEOK',
+            'Commonwealth Edison Company': 'CE',
+            'American Electric Power Co., Inc.': 'AEP',
+            'American Transmission Systems, Inc.': 'ATSI',
+            'Allegheny Power': 'AP',
+            'Duquesne Light Company': 'DUQ',
+            'Public Service Electric and Gas Company': 'PS',
+            'Pennsylvania Electric Company': 'PN',
+            'PECO Energy Company': 'PE',
+            'Virginia Electric and Power Co.': 'DOM',
+            'PPL Electric Utilities Corporation': 'PL',
+            'Potomac Electric Power Company': 'PEP',
+            'The Dayton Power and Light Co.': 'DAY',
+            'Delmarva Power and Light Company': 'DPL',
+            'Jersey Central Power and Light Company': 'JC',
+            'Rockland Electric Company': 'RECO',
+            'Metropolitan Edison Company': 'ME',
+            'Baltimore Gas and Electric Company': 'BC',
+            'Atlantic City Electric Company': 'AE',
+            'Ohio Valley Electric Corporation': 'OVEC'
+        }
+        # replace commercial zones in substations
+        substation_labels.COMMERCIAL_ZONE = substation_labels.COMMERCIAL_ZONE.replace(mapping)
         return substation_labels
 
 
@@ -256,6 +309,13 @@ class PJMSystemMap:
         # match pnode with system substations
         node_list = self.matchPnodeWithMapSubstations(node_list, use_cache=use_cache,
                         only_match_high_confidence=only_match_high_confidence)
+        # check that zone are one-one match between node list and substations
+        for x in node_list.zone.unique():
+            if x not in self.all_substations_and_taps.PLANNING_ZONE_NAME.to_list():
+                print("the following zone is in node list but not in substations: {}".format(x))
+        for x in self.all_substations_and_taps.PLANNING_ZONE_NAME.dropna().unique():
+            if x not in node_list.zone.to_list():
+                print("the following zone is in substations but not in node list: {}".format(x))
         return node_list
 
 
@@ -399,6 +459,8 @@ class PJMSystemMap:
                 if line.distance(sub_geo) != 0:
                     lines.loc[index, column] = np.nan
 
+        return lines
+
 
     def fillMissingSubstations(self, lines):
         """
@@ -438,6 +500,8 @@ class PJMSystemMap:
                 print(sub)
                 print(matched_subs)
                 raise(ValueError("There are too many matches. Line index: {}".format(index)))
+
+        return lines
 
 
     def connectBrokenLines(self, lines):
@@ -548,6 +612,7 @@ class PJMSystemMap:
         index = lines[lines.TRANSMISSION_LINE_GLOBALID == "{2DC162CB-03B3-4F1B-8D22-A55111076626}"].index[0]
         if lines.loc[index, "SUBSTATION_B_GLOBALID"] is np.nan:
             lines.loc[index, "SUBSTATION_B_GLOBALID"] = "{DAD21BFC-B3AD-4F0E-9D5E-29DC7769F454}"
+            # TODO: this does not connect the line in geometry per se, only change the substation id
 
         return lines
 
@@ -568,6 +633,8 @@ class PJMSystemMap:
             for zone, geometry in zoneGeometryMap.items():
                 if row["geometry"].within(geometry):
                     df.loc[index, "geo_matched_zone"] = zone
+
+        return df
 
 
     def matchPnodeWithMapSubstations(self, pnode_list, use_cache=True, only_match_high_confidence=True):
@@ -901,26 +968,36 @@ class PJMSystemMap:
         return lines
 
 
-    def getLineSubstations(self, lines):
+    def getLineSubstationsTaps(self, lines):
         """
         Get substations that are in the lines dataframe.
 
         Also fill missing substations not found in the lines dataframe.
         """
+        # print out substations in lines that are not in substations or taps
+        for x in lines.SUBSTATION_A_GLOBALID.unique():
+            if x not in self.all_substations_and_taps.SUBSTATION_GLOBALID.unique():
+                print("This substation is cannot be found in substations and taps: {}".fomrat(x))
+        for x in lines.SUBSTATION_B_GLOBALID.unique():
+            if x not in self.all_substations_and_taps.SUBSTATION_GLOBALID.unique():
+                print("This substation is cannot be found in substations and taps: {}".fomrat(x))
+
         # get substations that exist in lines
         substations = self.all_substations_and_taps[
                         self.all_substations_and_taps["SUBSTATION_GLOBALID"].isin(lines["SUBSTATION_A_GLOBALID"]) |
                         self.all_substations_and_taps["SUBSTATION_GLOBALID"].isin(lines["SUBSTATION_B_GLOBALID"])
                         ].copy(deep=True) # TODO: does it need to be a deep copy?
 
-        # append missing substations to list
-
         return substations
 
 
-    def matchEIAPlantWithLineSubstations(self, lines):
+    def matchEIAPlantWithLineSubstationsTaps(self, lines):
         """
-        match EIA plant to substations in lines. matching is based on distance.
+        match EIA plant to substations and taps in lines.
+        matching is based on distance.
+
+        TODO: currently match to taps as well. revisit if it doesn't make sense
+            to do so.
 
         the reason matching is not with all substations is that many substations
         don't have connecting lines. if plant gets matched to those substations
@@ -929,7 +1006,7 @@ class PJMSystemMap:
         """
 
         # get substations that exist in lines
-        substations = self.getLineSubstations(lines)
+        substations = self.getLineSubstationsTaps(lines)
 
         # match plants to nearest substations
         # unary union of the gpd2 geomtries

@@ -1,5 +1,5 @@
 import unittest
-from functions import * # TODO: why not from ._function import *
+from functions import *
 import geopandas as gpd
 
 class PJMSystemMapTest(unittest.TestCase):
@@ -89,6 +89,7 @@ class PJMSystemMapTest(unittest.TestCase):
         for i, x in enumerate(backbone_lines.dtypes):
             self.assertEqual(dtypes[i], x)
 
+        # check that all lines have a corresponding line rating
         self.assertEqual(backbone_lines["line_rating"].isnull().sum(), 0)
 
     def testAllSubstationsAndTapsGetter(self):
@@ -199,9 +200,9 @@ class PJMSystemMapTest(unittest.TestCase):
             self.assertEqual(dtypes[i], x)
 
 
-    def testGetLineSubstations(self):
+    def testGetLineSubstationsTaps(self):
         lines = self.dataLoader.getPJMBackboneLines()
-        substations = self.dataLoader.getLineSubstations(lines)
+        substations = self.dataLoader.getLineSubstationsTaps(lines)
         self.assertEqual(substations.shape, (478, 16))
         columns = ['FAC_ID', 'MEMBER', 'NAME', 'STATE', 'SUBSTATION_GLOBALID',
                     'SUBSTATION_TYPE', 'SYM_CODE', 'VOLTAGE', 'COMMERCIAL_ZONE',
@@ -249,10 +250,10 @@ class PJMSystemMapTest(unittest.TestCase):
             self.assertEqual(dtypes[i], x)
 
 
-    def testMatchEIAPlantWithLineSubstations(self):
+    def testMatchEIAPlantWithLineSubstationsTaps(self):
         plant = self.dataLoader.getEIAPlantData()
         lines = self.dataLoader.getPJMBackboneLines()
-        self.dataLoader.matchEIAPlantWithLineSubstations(lines)
+        self.dataLoader.matchEIAPlantWithLineSubstationsTaps(lines)
 
         self.assertEqual(plant.shape, (3373, 22))
         columns = ['Plant Code', 'Plant Name', 'Street Address', 'City', 'County', 'State',
@@ -281,6 +282,7 @@ class PJMSystemMapTest(unittest.TestCase):
         for i, x in enumerate(plant.dtypes):
             self.assertEqual(dtypes[i], x)
 
+        # check that all plant has a corresponding nearest substations
         self.assertEqual(plant["Nearest_Substations"].isnull().sum(), 0)
 
 
