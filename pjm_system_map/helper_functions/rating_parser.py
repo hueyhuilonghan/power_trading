@@ -5,13 +5,13 @@ import pandas as pd
 
 # UNTESTED SCRIPT
 
-def parseLineRating(OTHER_DATA_DIRECTORY):
+def parseRating(OTHER_DATA_DIRECTORY, CACHE_DATA_DIRECTORY):
     """
-    function to parse raw line rating txt file from PJM to csv, which is
+    function to parse raw rating txt file from PJM to csv, which is
         more digestible.
     """
-    inputFilePath = os.path.join(OTHER_DATA_DIRECTORY, "PJM_Line_ratings.txt")
-    outputFilePath = os.path.join(OTHER_DATA_DIRECTORY, "line_rating.csv")
+    inputFilePath = os.path.join(OTHER_DATA_DIRECTORY, "ratings.txt")
+    outputFilePath = os.path.join(CACHE_DATA_DIRECTORY, "ratings.csv")
 
     df_dict = {"company": [], "substation": [], "voltage": [],
                "device": [], "end": [], "description": [],
@@ -82,6 +82,6 @@ def parseLineRating(OTHER_DATA_DIRECTORY):
 
     tmp = df.groupby(["company", "substation", "voltage", "device", "end", "description"]).size()
     if len(tmp[tmp != 8]) != 0:
-        raise("There are component that has abnormal line rating amount")
+        raise(ValueError("There are component that has abnormal rating amount"))
 
     df.to_csv(outputFilePath, index=False)

@@ -150,7 +150,8 @@ class PJMSystemMap:
         lines = self.connectBrokenLines(lines)
         # handle special cases
         lines = self.fixLineSpecialCases(lines)
-
+        # get length for missing lines
+        lines = self.fillMissingLineLength(lines)
         return lines
 
 
@@ -424,6 +425,7 @@ class PJMSystemMap:
                                     "SUBSTATION_GLOBALID": str(uuid.uuid1()),
                                     "SUBSTATION_TYPE": "1",
                                     "SYM_CODE": "TAP",
+                                    "VOLTAGE": 345.0,
                                     "SHAPE": "Point",
                                     "SUBSTATION_KEY": "missing_substation_1",
                                     "geometry": Point(-9819520.7577, 5136039.221299998)
@@ -617,6 +619,20 @@ class PJMSystemMap:
         return lines
 
 
+    def fillMissingLineLength(self, lines):
+        """
+        fill line lengths for those that are missing.
+
+        TODO: currently using shapely's length attributes, which seems to only
+            calculate distance between end points (to be confirmed). Need better
+            way of calculating.
+        """
+        for index, row in lines.iterrows():
+            if np.isnan(row["LENGTH_KM"]):
+                lines.loc[index, "LENGTH_KM"] = row["geometry"].length / 1000
+
+        return lines
+
 
     def geoMatchZones(self, df):
         """
@@ -789,19 +805,20 @@ class PJMSystemMap:
         else:
             # load equipment list
             filePath = os.path.join(self.OTHER_DATA_DIRECTORY, "equiplist.csv")
-            line_equiplist = pd.read_csv(filePath, skiprows=1)
+            equiplist = pd.read_csv(filePath, skiprows=1)
             equiplist["VOLTAGE"] = equiplist["VOLTAGE"].apply(lambda x: float(x.replace("KV", "")))
+            line_equiplist = equiplist[equiplist.TYPE == "LINE"].copy()
 
             # load line rating
-            filePath = os.path.join(self.OTHER_DATA_DIRECTORY, "line_rating.csv")
-            line_rating = pd.read_csv(filePath)
+            filePath = os.path.join(self.CACHE_DATA_DIRECTORY, "ratings.csv")
+            ratings = pd.read_csv(filePath)
 
             # merge equiplist with line rating
             # TODO: currently averaging line rating over different conditions, consider improving this in the future
-            line_rating = line_rating.groupby(["company", "substation", "voltage", "device", "end", "description"]).mean()
-            line_rating = line_rating[["day_normal"]]
-            equiplist = pd.merge(equiplist, line_rating, left_on="LONG NAME", right_on="description", how="left")
-            line_equiplist = equiplist[equiplist.TYPE == "LINE"].copy()
+            ratings = ratings.groupby(["company", "substation", "voltage", "device", "end", "description"]).mean()
+            ratings = ratings[["day_normal"]]
+            line_equiplist = pd.merge(line_equiplist, ratings, left_on="LONG NAME", right_on="description", how="left")
+
 
             # for the lines equipment list, take out extra stuff in LONG NAME, and leave only substation names in the form of subA-subB
             # this is for matching purpose later where we match system map with equiplist based on substation names
@@ -955,8 +972,11 @@ class PJMSystemMap:
                         how="left", left_on="TRANSMISSION_LINE_GLOBALID",
                         right_on="line_id")
 
+        # get rid of lines where rating is 9999
+        lines["line_rating"] = lines["line_rating"].replace({9999: np.nan})
+
         # TODO: fill lines that don't have liner ratin for now
-        line_rating_fill = {1000: 750, 765:4000, 500:3000, 345:1250}
+        line_rating_fill = {1000: 750.0, 765:4000.0, 500:3000.0, 345:1250.0}
         for voltage_level, replacement_value in line_rating_fill.items():
             masks = lines[lines.VOLTAGE == voltage_level].index
             lines.loc[masks, "line_rating"] = lines.loc[masks, "line_rating"].fillna(replacement_value)
@@ -971,8 +991,6 @@ class PJMSystemMap:
     def getLineSubstationsTaps(self, lines):
         """
         Get substations that are in the lines dataframe.
-
-        Also fill missing substations not found in the lines dataframe.
         """
         # print out substations in lines that are not in substations or taps
         for x in lines.SUBSTATION_A_GLOBALID.unique():
@@ -989,6 +1007,52 @@ class PJMSystemMap:
                         ].copy(deep=True) # TODO: does it need to be a deep copy?
 
         return substations
+
+    # def getTransformerRatings(self, lines):
+    #     """
+    #     Get transformer ratings for substations in the lines dataframe.
+    #
+    #     TODO: currently assume all transfomrer are 2000 MVA rating.
+    #         understand better how transformer ratings work and implement
+    #         rating from ratings.txt
+    #     """
+    #     # # load equipment list
+    #     # filePath = os.path.join(self.OTHER_DATA_DIRECTORY, "equiplist.csv")
+    #     # equiplist = pd.read_csv(filePath, skiprows=1)
+    #     # equiplist["VOLTAGE"] = equiplist["VOLTAGE"].apply(lambda x: float(x.replace("KV", "")))
+    #     # xfmr_equiplist = equiplist[equiplist["TYPE"] == "XFMR"].copy()
+    #     #
+    #     # # load ratings
+    #     # filePath = os.path.join(self.CACHE_DATA_DIRECTORY, "ratings.csv")
+    #     # ratings = pd.read_csv(filePath)
+    #     #
+    #     # # merge equiplist with ratings
+    #     # # TODO: currently averaging line rating over different conditions, consider improving this in the future
+    #     # ratings = ratings.groupby(["company", "substation", "voltage", "device", "end", "description"]).mean()
+    #     # ratings = ratings[["day_normal"]]
+    #     # line_equiplist = pd.merge(line_equiplist, ratings, left_on="LONG NAME", right_on="description", how="left")
+    #
+    #     # figure out where transformers should be based on line infomration
+    #     # transfomrer should be where there is a voltage change
+    #     where_xfmr_should_be = {}
+    #
+    #     substation_line_voltage = pd.concat([lines[["SUBSTATION_A_GLOBALID", "VOLTAGE"]].rename(columns={"SUBSTATION_A_GLOBALID": "SUBSTATION_GLOBALID"}),
+    #                                          lines[["SUBSTATION_B_GLOBALID", "VOLTAGE"]].rename(columns={"SUBSTATION_B_GLOBALID": "SUBSTATION_GLOBALID"})])
+    #
+    #     for index, value in substation_line_voltage.groupby("SUBSTATION_GLOBALID")["VOLTAGE"].unique().iteritems():
+    #         if len(value) > 1:
+    #             where_xfmr_should_be[index] = value
+    #
+    #
+    #     xformer_rating = {"SUBSTATION_GLOBALID":[], "rating": []}
+    #
+    #     for key, value in where_xfmr_should_be.items():
+    #         xformer_rating["SUBSTATION_GLOBALID"].append(key)
+    #         xformer_rating["rating"].append(2000.0)
+    #
+    #     xformer_rating = pd.DataFrame(xformer_rating)
+    #
+    #     return xformer_rating
 
 
     def matchEIAPlantWithLineSubstationsTaps(self, lines):
