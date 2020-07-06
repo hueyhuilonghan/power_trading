@@ -20,6 +20,8 @@ from weighted_levenshtein import lev
 from shapely.ops import nearest_points, linemerge
 from shapely.geometry import Point, LineString
 
+from .dfs import DFSGraph
+
 
 class PJMSystemMap:
     # class attributes
@@ -632,6 +634,18 @@ class PJMSystemMap:
                 lines.loc[index, "LENGTH_KM"] = row["geometry"].length / 1000
 
         return lines
+
+
+    def removeUnconnectedVertices(self, lines):
+        """
+        check if the lines and substations that form the network is connected.
+
+        treat this as a graph where substations are vertices and lines are
+            edges.
+
+        DFS (depth-first-search) is used.
+        """
+        pass
 
 
     def geoMatchZones(self, df):
